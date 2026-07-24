@@ -91,9 +91,9 @@ function App() {
 
 
   return (
-    <div className="min-h-screen bg-surface px-4 py-5 text-text">
+    <div className="min-h-screen overflow-hidden rounded-[34px] bg-surface px-4 py-5 text-text">
 
-      <div className="mx-auto w-full max-w-md rounded-3xl border border-[#1f2a44] bg-[#0d1325] p-5 shadow-glow">
+      <div className="mx-auto w-full max-w-md rounded-[30px] border border-[#1f2a44] bg-[#0d1325] p-5 shadow-glow">
 
         <div className="flex justify-between">
           <div>

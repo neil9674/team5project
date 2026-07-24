@@ -1,6 +1,6 @@
 # PhishGuard Chrome Extension
 
-A React + TypeScript browser extension prototype for scanning emails and flagging phishing attempts.
+A React + TypeScript browser extension for scanning Gmail messages and flagging phishing attempts.
 
 ## What was created
 
@@ -13,7 +13,7 @@ A React + TypeScript browser extension prototype for scanning emails and flaggin
 ### Chrome extension config
 - `public/manifest.json` - Chrome Manifest V3 popup extension configuration.
 - `public/popup.html` - extension popup entrypoint.
-- `public/icons/icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png` - generated placeholder extension icons.
+- `public/icons/icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png` - extension icons.
 
 ### App source files
 - `src/main.tsx` - React app bootstrap.
@@ -33,7 +33,7 @@ A React + TypeScript browser extension prototype for scanning emails and flaggin
   - risk score and color-coded meter
   - specific threat signals
   - report / back actions
-- Safe / phishing result flow toggled on repeated scan actions for demo purposes.
+- Gmail email preview and manual scan flow.
 - Styling matches the provided screenshot reference with a polished, dark UI.
 
 ## Build and verification
@@ -47,6 +47,5 @@ A React + TypeScript browser extension prototype for scanning emails and flaggin
 3. Open the Vite URL to preview the popup UI in the browser.
 
 ## Notes
-- This project is a UI prototype and does not yet implement live Gmail/Outlook content script scanning.
+- Gmail scanning is handled by the extension content script.
 - The extension popup is configured in `public/manifest.json`, but the build output should be adapted for Chrome extension packaging if installed.
-- The current scanning logic is simulated to match the design flow.
