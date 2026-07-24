@@ -1,50 +1,68 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useMemo, useState } from 'react';
+import { analyzeEmail, EmailData } from './emailScanner';
 import { ScanResult, ThreatSignal } from './types';
 
-const mockEmail = {
+const defaultEmail: EmailData = {
   sender: 'security@paypa1.com',
   subject: 'Urgent: Your account has been limited — verify now',
-  time: '09:42 AM',
+  body: 'We noticed suspicious activity on your account. Verify immediately to avoid suspension.',
+  source: 'Demo',
 };
-
-const safeSignals: ThreatSignal[] = [
-  { title: 'Sender domain authenticity', detail: 'Verified domain matches sender.', level: 'LOW' },
-  { title: 'SPF / DKIM authentication', detail: 'Email authentication passed.', level: 'LOW' },
-  { title: 'Link reputation', detail: 'No malicious URLs detected.', level: 'LOW' },
-];
-
-const phishingSignals: ThreatSignal[] = [
-  { title: 'Suspicious link detected', detail: 'paypal-secure-login.ru/account', level: 'HIGH' },
-  { title: 'Domain spoofing', detail: 'Sender mimics paypal.com', level: 'HIGH' },
-  { title: 'Urgency manipulation', detail: '"Act now or lose access"', level: 'MEDIUM' },
-  { title: 'Mismatched SSL cert', detail: 'Certificate issuer unknown', level: 'MEDIUM' },
-];
 
 function App() {
   const [status, setStatus] = useState<'idle' | 'safe' | 'phishing'>('idle');
   const [isScanning, setIsScanning] = useState(false);
+  const [email, setEmail] = useState<EmailData>(defaultEmail);
+  const [error, setError] = useState('');
 
   const result = useMemo<ScanResult>(() => {
-    if (status === 'safe') {
-      return { status: 'safe', score: 12, signals: safeSignals };
-    }
-    if (status === 'phishing') {
-      return { status: 'phishing', score: 82, signals: phishingSignals };
+    if (status === 'safe' || status === 'phishing') {
+      return analyzeEmail(email);
     }
     return { status: 'idle', score: 0, signals: [] };
-  }, [status]);
-
-  const [lastResultSafe, setLastResultSafe] = useState(true);
+  }, [status, email]);
 
   const onScan = () => {
     setIsScanning(true);
-    setTimeout(() => {
-      const nextStatus = lastResultSafe ? 'phishing' : 'safe';
-      setStatus(nextStatus);
-      setLastResultSafe(!lastResultSafe);
+    setError('');
+    const chromeApi = (window as any).chrome;
+
+    if (!chromeApi?.tabs?.query || !chromeApi?.tabs?.sendMessage) {
+      setError('Extension runtime not available. Load this in Chrome with the extension installed.');
       setIsScanning(false);
-    }, 1100);
+      return;
+    }
+
+    chromeApi.tabs.query({ active: true, currentWindow: true }, (activeTabs: any[]) => {
+      const activeTab = activeTabs?.[0];
+      if (!activeTab?.id) {
+        setError('Unable to find the active tab.');
+        setIsScanning(false);
+        return;
+      }
+
+      chromeApi.tabs.sendMessage(activeTab.id, { type: 'GET_EMAIL_DATA' }, (response: any) => {
+        if (chromeApi.runtime?.lastError) {
+          setError('Unable to read email data from the active tab. Make sure Gmail or Outlook is open.');
+          setStatus('idle');
+          setIsScanning(false);
+          return;
+        }
+
+        if (!response || !response.email) {
+          setError('Unable to read email from the current tab. Open a Gmail or Outlook email message and try again.');
+          setStatus('idle');
+          setIsScanning(false);
+          return;
+        }
+
+        setEmail(response.email);
+        const scan = analyzeEmail(response.email);
+        setStatus(scan.status === 'scanning' || scan.status === 'idle' ? 'safe' : scan.status);
+        setIsScanning(false);
+      });
+    });
   };
 
   const meterBlocks = Array.from({ length: 10 }, (_, index) => index + 1);
@@ -69,14 +87,19 @@ function App() {
               <span className="text-xl">✉️</span>
             </div>
             <div className="flex-1 text-sm">
-              <p className="font-semibold text-white">{mockEmail.sender}</p>
-              <p className="text-slate-400">{mockEmail.subject}</p>
+              <p className="font-semibold text-white">{(email as any).sender}</p>
+              <p className="text-slate-400">{(email as any).subject}</p>
             </div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{mockEmail.time}</p>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{(email as any).source || 'Email'}</p>
           </div>
         </div>
 
         <AnimatePresence mode="wait">
+          {error && (
+            <div className="mt-5 rounded-3xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-200">
+              {error}
+            </div>
+          )}
           {status === 'idle' && (
             <motion.div
               key="scan"

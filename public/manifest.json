@@ -17,8 +17,13 @@
   "host_permissions": ["https://mail.google.com/*", "https://outlook.office.com/*"],
   "content_scripts": [
     {
+<<<<<<< HEAD
       "matches": ["https://mail.google.com/*"],
       "js": ["tokenizer.js", "model.js", "classifier.js", "content.js"],
+=======
+      "matches": ["https://mail.google.com/*", "https://outlook.office.com/*"],
+      "js": ["contentScript.js"],
+>>>>>>> dbb71b3 (committing recent changes)
       "run_at": "document_idle"
     }
   ],
