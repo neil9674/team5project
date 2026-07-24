@@ -13,8 +13,8 @@
       "128": "icons/icon-128.png"
     }
   },
-  "permissions": ["activeTab", "scripting", "tabs"],
-  "host_permissions": ["https://mail.google.com/*", "https://outlook.office.com/*"],
+  "permissions": ["activeTab"],
+  "host_permissions": ["https://mail.google.com/*"],
   "content_scripts": [
     {
       "matches": ["https://mail.google.com/*"],

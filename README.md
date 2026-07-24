@@ -12,7 +12,6 @@ A React + TypeScript browser extension for scanning Gmail messages and flagging 
 
 ### Chrome extension config
 - `public/manifest.json` - Chrome Manifest V3 popup extension configuration.
-- `public/popup.html` - extension popup entrypoint.
 - `public/icons/icon-16.png`, `icon-32.png`, `icon-48.png`, `icon-128.png` - extension icons.
 
 ### App source files
