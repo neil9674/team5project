@@ -76,7 +76,7 @@ function App() {
   const scoreLabel =
     result?.status === "phishing"
       ? "HIGH THREAT"
-      : result?.status === "safe" && result.score >= 50
+      : result?.status === "safe" && result.score >= 45
       ? "REVIEW"
       : result?.status === "safe"
       ? "ALL CLEAR"
@@ -85,7 +85,7 @@ function App() {
   const scoreColor =
     result?.status === "phishing"
       ? "border-red-500 text-red-400"
-      : result?.status === "safe" && result.score >= 50
+      : result?.status === "safe" && result.score >= 45
       ? "border-amber-500 text-amber-300"
       : "border-emerald-500 text-emerald-400";
 
@@ -162,7 +162,7 @@ function App() {
 
                 {result.status === "phishing"
                   ? "⚠️ Phishing Attempt Detected"
-                  : result.score >= 50
+                  : result.score >= 45
                   ? "Review Recommended"
                   : "✅ Email Looks Safe"}
 

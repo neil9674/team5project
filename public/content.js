@@ -8,7 +8,7 @@
 
   const MODEL_THRESHOLD = 0.72;
   const MODEL_HIGH_CONFIDENCE_THRESHOLD = 0.88;
-  const PHISHING_SCORE_THRESHOLD = 75;
+  const PHISHING_SCORE_THRESHOLD = 70;
   const SCAN_DEBOUNCE_MS = 450;
   const URL_SHORTENERS = new Set([
     "bit.ly",
@@ -699,18 +699,41 @@
     return classifyText(emailText, PHISHING_MODEL, MODEL_THRESHOLD);
   }
 
+  function getRiskSignalCounts(signals) {
+    return signals.reduce(
+      (counts, signal) => {
+        if (signal.level === "HIGH") counts.high += 1;
+        if (signal.level === "MEDIUM") counts.medium += 1;
+        return counts;
+      },
+      { high: 0, medium: 0 },
+    );
+  }
+
+  function calculateBalancedScore(mlScore, heuristicScore, riskSignalCounts) {
+    const hasRiskyHeuristics = riskSignalCounts.high > 0 || riskSignalCounts.medium > 0;
+
+    if (!hasRiskyHeuristics) {
+      return Math.min(100, Math.round(mlScore * 0.62 + 3));
+    }
+
+    const blendedScore = mlScore * 0.55 + heuristicScore * 0.35;
+    const corroborationBoost = Math.min(15, riskSignalCounts.high * 8 + riskSignalCounts.medium * 4);
+    return Math.min(100, Math.round(blendedScore + corroborationBoost));
+  }
+
   function combineResults(email, modelResult, heuristicResult) {
     const mlScore = Math.round((modelResult.probability || 0) * 100);
-    const hasRiskyHeuristics = heuristicResult.signals.some((signal) => signal.level === "HIGH" || signal.level === "MEDIUM");
-    const weightedModelScore = hasRiskyHeuristics ? mlScore * 0.5 : mlScore * 0.35;
-    const weightedHeuristicScore = hasRiskyHeuristics ? heuristicResult.score * 0.5 : heuristicResult.score * 0.45;
-    const score = Math.min(100, Math.max(mlScore, heuristicResult.score, Math.round(weightedModelScore + weightedHeuristicScore)));
+    const riskSignalCounts = getRiskSignalCounts(heuristicResult.signals);
+    const hasRiskyHeuristics = riskSignalCounts.high > 0 || riskSignalCounts.medium > 0;
+    const score = calculateBalancedScore(mlScore, heuristicResult.score, riskSignalCounts);
     const modelHighConfidence = (modelResult.probability || 0) >= MODEL_HIGH_CONFIDENCE_THRESHOLD;
     const modelSignalLevel = modelHighConfidence ? "HIGH" : mlScore >= 50 ? "MEDIUM" : "LOW";
     const status =
-      modelHighConfidence ||
-      heuristicResult.score >= 55 ||
-      (score >= PHISHING_SCORE_THRESHOLD && (hasRiskyHeuristics || modelResult.isPhishing))
+      (modelHighConfidence && score >= 60) ||
+      riskSignalCounts.high >= 2 ||
+      heuristicResult.score >= 65 ||
+      (score >= PHISHING_SCORE_THRESHOLD && hasRiskyHeuristics)
         ? "phishing"
         : "safe";
 
@@ -719,8 +742,8 @@
       status,
       verdict: status === "phishing"
         ? "Phishing risk detected"
-        : score >= 50
-          ? "Model sees moderate risk. Review before clicking links."
+        : score >= 45
+          ? "Some risk signals are present. Review before clicking links."
           : "Email looks safe",
       score,
       analyzedAt: new Date().toISOString(),
