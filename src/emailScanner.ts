@@ -15,7 +15,7 @@ export interface EmailData {
 
 const knownBrands = [
   { name: 'PayPal', domains: ['paypal.com'], patterns: [/paypal/i] },
-  { name: 'Google', domains: ['google.com', 'accounts.google.com'], patterns: [/google/i, /gmail/i] },
+  { name: 'Google', domains: ['google.com', 'accounts.google.com', 'gmail.com'], patterns: [/google/i, /gmail/i] },
   { name: 'Microsoft', domains: ['microsoft.com', 'outlook.com', 'office.com', 'live.com'], patterns: [/microsoft/i, /outlook/i, /office 365/i, /hotmail/i] },
   { name: 'Apple', domains: ['apple.com', 'icloud.com'], patterns: [/apple/i, /icloud/i] },
 ];
@@ -149,22 +149,36 @@ export function analyzeEmail(email: EmailData): ScanResult {
     signals.push({ title: 'Empty or truncated body', detail: 'The email body appears empty or too short to verify.', level: 'MEDIUM' });
   }
 
-  const score = Math.min(
+  const heuristicScore = Math.min(
     100,
-    10 +
-      signals.reduce((sum, signal) => {
+    signals.reduce((sum, signal) => {
         if (signal.level === 'HIGH') return sum + 30;
         if (signal.level === 'MEDIUM') return sum + 15;
         return sum + 5;
       }, 0),
   );
-  const status: ScanResult['status'] = score >= 60 ? 'phishing' : 'safe';
+  const status: ScanResult['status'] = heuristicScore >= 65 ? 'phishing' : 'safe';
+  const senderDomainForResult = senderDomain === 'unknown sender' ? '' : senderDomain;
 
   return {
     status,
-    score,
+    verdict: status === 'phishing' ? 'Phishing risk detected' : 'Email looks safe',
+    score: heuristicScore,
     signals: signals.length
       ? signals
       : [{ title: 'No suspicious signals found', detail: 'This email appears legitimate.', level: 'LOW' }],
+    email: {
+      senderName: email.sender,
+      senderEmail: email.sender.includes('@') ? email.sender : '',
+      senderDomain: senderDomainForResult,
+      subject: email.subject,
+      urlCount: allLinks.length,
+      attachmentCount: 0,
+    },
+    model: null,
+    heuristics: {
+      score: heuristicScore,
+      signals,
+    },
   };
 }

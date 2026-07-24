@@ -6,7 +6,9 @@
   if (window.__PHISHGUARD_CONTENT_LOADED__) return;
   window.__PHISHGUARD_CONTENT_LOADED__ = true;
 
-  const MODEL_THRESHOLD = 0.5;
+  const MODEL_THRESHOLD = 0.72;
+  const MODEL_HIGH_CONFIDENCE_THRESHOLD = 0.88;
+  const PHISHING_SCORE_THRESHOLD = 65;
   const SCAN_DEBOUNCE_MS = 450;
   const URL_SHORTENERS = new Set([
     "bit.ly",
@@ -317,8 +319,18 @@
 
   function combineResults(email, modelResult, heuristicResult) {
     const mlScore = Math.round((modelResult.probability || 0) * 100);
-    const score = Math.min(100, Math.round(mlScore * 0.50 + heuristicResult.score * 0.50));
-    const status = modelResult.isPhishing || heuristicResult.score >= 40 || score >= 55 ? "phishing" : "safe";
+    const hasRiskyHeuristics = heuristicResult.signals.some((signal) => signal.level === "HIGH" || signal.level === "MEDIUM");
+    const weightedModelScore = hasRiskyHeuristics ? mlScore * 0.5 : mlScore * 0.35;
+    const weightedHeuristicScore = hasRiskyHeuristics ? heuristicResult.score * 0.5 : heuristicResult.score * 0.45;
+    const score = Math.min(100, Math.round(weightedModelScore + weightedHeuristicScore));
+    const modelHighConfidence = (modelResult.probability || 0) >= MODEL_HIGH_CONFIDENCE_THRESHOLD;
+    const modelSignalLevel = modelHighConfidence && hasRiskyHeuristics ? "HIGH" : modelResult.isPhishing ? "MEDIUM" : "LOW";
+    const status =
+      (modelHighConfidence && hasRiskyHeuristics) ||
+      heuristicResult.score >= 55 ||
+      score >= PHISHING_SCORE_THRESHOLD
+        ? "phishing"
+        : "safe";
 
     return {
       source: "gmail",
@@ -336,7 +348,7 @@
       },
       model: {
         probability: Number((modelResult.probability || 0).toFixed(4)),
-        isPhishing: Boolean(modelResult.isPhishing),
+        isPhishing: status === "phishing",
         threshold: MODEL_THRESHOLD,
         unavailable: Boolean(modelResult.unavailable),
       },
@@ -350,7 +362,7 @@
           detail: modelResult.unavailable
             ? "Classifier files were not available on this page."
             : `Model phishing probability: ${mlScore}/100.`,
-          level: modelResult.isPhishing ? "HIGH" : "LOW",
+          level: modelSignalLevel,
         },
         ...heuristicResult.signals,
       ],

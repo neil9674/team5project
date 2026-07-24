@@ -5,26 +5,44 @@ import { ScanResult } from "./types";
 function App() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    // Get latest scan result when popup opens
-    chrome.runtime.sendMessage(
-      { type: "PHISHGUARD_GET_RESULT" },
-      (response) => {
+  const requestActiveEmailScan = (messageType: "PHISHGUARD_GET_RESULT" | "PHISHGUARD_SCAN_EMAIL") => {
+    setError("");
+
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      if (!tab?.id) {
+        setError("Open Gmail, select an email, then scan again.");
+        setIsScanning(false);
+        return;
+      }
+
+      chrome.tabs.sendMessage(tab.id, { type: messageType }, (response) => {
+        if (chrome.runtime.lastError) {
+          setError("Refresh Gmail, open an email, then scan again.");
+          setIsScanning(false);
+          return;
+        }
+
         if (response?.result) {
           setResult(response.result);
         }
-      }
-    );
 
-    // Listen for new scan results
+        setIsScanning(false);
+      });
+    });
+  };
+
+  useEffect(() => {
     const listener = (message: any) => {
-      if (message.type === "PHISHGUARD_RESULT_UPDATED") {
+      if (message?.type === "PHISHGUARD_RESULT_UPDATED" && message.result) {
         setResult(message.result);
+        setError("");
       }
     };
 
     chrome.runtime.onMessage.addListener(listener);
+    requestActiveEmailScan("PHISHGUARD_SCAN_EMAIL");
 
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
@@ -33,14 +51,7 @@ function App() {
 
   const scanEmail = () => {
     setIsScanning(true);
-
-    chrome.runtime.sendMessage({
-      type: "PHISHGUARD_SCAN_EMAIL",
-    });
-
-    setTimeout(() => {
-      setIsScanning(false);
-    }, 1000);
+    requestActiveEmailScan("PHISHGUARD_SCAN_EMAIL");
   };
 
 
@@ -83,7 +94,7 @@ function App() {
           <div className="mt-4 rounded-3xl border border-[#17243a] bg-[#0b1321] p-4">
 
             <p className="font-semibold text-white">
-              {result?.email?.senderEmail || "No email detected"}
+              {result?.email?.senderEmail || result?.email?.senderName || "No email detected"}
             </p>
 
             <p className="text-slate-400">
@@ -103,6 +114,12 @@ function App() {
         >
           {isScanning ? "Scanning..." : "Scan Email"}
         </button>
+
+        {error && (
+          <p className="mt-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            {error}
+          </p>
+        )}
 
 
 
