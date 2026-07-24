@@ -7,7 +7,15 @@ function App() {
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState("");
 
-  const requestActiveEmailScan = (messageType: "PHISHGUARD_GET_RESULT" | "PHISHGUARD_SCAN_EMAIL") => {
+  const isSameEmail = (current: ScanResult | null, next: ScanResult) => {
+    return (
+      current?.email?.senderEmail === next.email?.senderEmail &&
+      current?.email?.senderName === next.email?.senderName &&
+      current?.email?.subject === next.email?.subject
+    );
+  };
+
+  const requestActiveEmail = (messageType: "PHISHGUARD_GET_PREVIEW" | "PHISHGUARD_SCAN_EMAIL") => {
     setError("");
 
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
@@ -39,10 +47,20 @@ function App() {
         setResult(message.result);
         setError("");
       }
+
+      if (message?.type === "PHISHGUARD_EMAIL_PREVIEW_UPDATED" && message.result) {
+        setResult((current) => {
+          if (current?.status !== "idle" && isSameEmail(current, message.result)) {
+            return current;
+          }
+          return message.result;
+        });
+        setError("");
+      }
     };
 
     chrome.runtime.onMessage.addListener(listener);
-    requestActiveEmailScan("PHISHGUARD_SCAN_EMAIL");
+    requestActiveEmail("PHISHGUARD_GET_PREVIEW");
 
     return () => {
       chrome.runtime.onMessage.removeListener(listener);
@@ -51,13 +69,15 @@ function App() {
 
   const scanEmail = () => {
     setIsScanning(true);
-    requestActiveEmailScan("PHISHGUARD_SCAN_EMAIL");
+    requestActiveEmail("PHISHGUARD_SCAN_EMAIL");
   };
 
 
   const scoreLabel =
     result?.status === "phishing"
       ? "HIGH THREAT"
+      : result?.status === "safe" && result.score >= 50
+      ? "REVIEW"
       : result?.status === "safe"
       ? "ALL CLEAR"
       : "WAITING";
@@ -65,6 +85,8 @@ function App() {
   const scoreColor =
     result?.status === "phishing"
       ? "border-red-500 text-red-400"
+      : result?.status === "safe" && result.score >= 50
+      ? "border-amber-500 text-amber-300"
       : "border-emerald-500 text-emerald-400";
 
 
@@ -140,6 +162,8 @@ function App() {
 
                 {result.status === "phishing"
                   ? "⚠️ Phishing Attempt Detected"
+                  : result.score >= 50
+                  ? "Review Recommended"
                   : "✅ Email Looks Safe"}
 
               </h2>

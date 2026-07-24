@@ -8,7 +8,7 @@
 
   const MODEL_THRESHOLD = 0.72;
   const MODEL_HIGH_CONFIDENCE_THRESHOLD = 0.88;
-  const PHISHING_SCORE_THRESHOLD = 65;
+  const PHISHING_SCORE_THRESHOLD = 75;
   const SCAN_DEBOUNCE_MS = 450;
   const URL_SHORTENERS = new Set([
     "bit.ly",
@@ -137,8 +137,9 @@
   ];
 
   let latestResult = createIdleResult("Open an email in Gmail to scan it.");
-  let lastFingerprint = "";
-  let scanTimer = null;
+  let lastPreviewFingerprint = "";
+  let lastScannedFingerprint = "";
+  let previewTimer = null;
 
   function isVisible(element) {
     if (!element) return false;
@@ -703,20 +704,24 @@
     const hasRiskyHeuristics = heuristicResult.signals.some((signal) => signal.level === "HIGH" || signal.level === "MEDIUM");
     const weightedModelScore = hasRiskyHeuristics ? mlScore * 0.5 : mlScore * 0.35;
     const weightedHeuristicScore = hasRiskyHeuristics ? heuristicResult.score * 0.5 : heuristicResult.score * 0.45;
-    const score = Math.min(100, Math.round(weightedModelScore + weightedHeuristicScore));
+    const score = Math.min(100, Math.max(mlScore, heuristicResult.score, Math.round(weightedModelScore + weightedHeuristicScore)));
     const modelHighConfidence = (modelResult.probability || 0) >= MODEL_HIGH_CONFIDENCE_THRESHOLD;
-    const modelSignalLevel = modelHighConfidence && hasRiskyHeuristics ? "HIGH" : modelResult.isPhishing ? "MEDIUM" : "LOW";
+    const modelSignalLevel = modelHighConfidence ? "HIGH" : mlScore >= 50 ? "MEDIUM" : "LOW";
     const status =
-      (modelHighConfidence && hasRiskyHeuristics) ||
+      modelHighConfidence ||
       heuristicResult.score >= 55 ||
-      score >= PHISHING_SCORE_THRESHOLD
+      (score >= PHISHING_SCORE_THRESHOLD && (hasRiskyHeuristics || modelResult.isPhishing))
         ? "phishing"
         : "safe";
 
     return {
       source: "gmail",
       status,
-      verdict: status === "phishing" ? "Phishing risk detected" : "Email looks safe",
+      verdict: status === "phishing"
+        ? "Phishing risk detected"
+        : score >= 50
+          ? "Model sees moderate risk. Review before clicking links."
+          : "Email looks safe",
       score,
       analyzedAt: new Date().toISOString(),
       email: {
@@ -764,6 +769,27 @@
     };
   }
 
+  function createPreviewResult(email, message = "Ready to scan this email.") {
+    return {
+      source: "gmail",
+      status: "idle",
+      verdict: message,
+      score: 0,
+      analyzedAt: new Date().toISOString(),
+      email: {
+        senderName: email.sender.name,
+        senderEmail: email.sender.email,
+        senderDomain: email.sender.domain,
+        subject: email.subject,
+        urlCount: email.urls.length,
+        attachmentCount: email.attachments.length,
+      },
+      model: null,
+      heuristics: { score: 0, signals: [] },
+      signals: [],
+    };
+  }
+
   function publishResult(result) {
     latestResult = result;
     window.dispatchEvent(new CustomEvent("phishguard:result", { detail: result }));
@@ -782,6 +808,36 @@
     }
   }
 
+  function publishPreview(result) {
+    latestResult = result;
+
+    if (typeof chrome !== "undefined" && chrome.runtime?.id) {
+      try {
+        const pendingMessage = chrome.runtime.sendMessage({ type: "PHISHGUARD_EMAIL_PREVIEW_UPDATED", result });
+        if (pendingMessage?.catch) pendingMessage.catch(() => {});
+      } catch {
+        // The popup may be closed; the latest preview remains available by request.
+      }
+    }
+  }
+
+  function getCurrentEmailPreview() {
+    const email = extractEmail();
+    return email ? createPreviewResult(email) : createIdleResult("No open Gmail message detected.");
+  }
+
+  function updateCurrentEmailPreview() {
+    const previewResult = getCurrentEmailPreview();
+    const fingerprint = [
+      previewResult.email?.senderEmail || previewResult.email?.senderName || "",
+      previewResult.email?.subject || "",
+    ].join("|");
+
+    if (fingerprint === lastPreviewFingerprint) return;
+    lastPreviewFingerprint = fingerprint;
+    publishPreview(previewResult);
+  }
+
   function analyzeCurrentEmail() {
     const email = extractEmail();
     if (!email) {
@@ -790,25 +846,36 @@
     }
 
     const fingerprint = [email.sender.email, email.subject, email.body.slice(0, 300)].join("|");
-    if (fingerprint === lastFingerprint) return;
-    lastFingerprint = fingerprint;
+    if (fingerprint === lastScannedFingerprint) return;
+    lastScannedFingerprint = fingerprint;
 
     const modelResult = runModel(email.text);
     const heuristicResult = runHeuristicChecks(email);
     publishResult(combineResults(email, modelResult, heuristicResult));
   }
 
-  function scheduleScan() {
-    window.clearTimeout(scanTimer);
-    scanTimer = window.setTimeout(analyzeCurrentEmail, SCAN_DEBOUNCE_MS);
+  function schedulePreview() {
+    window.clearTimeout(previewTimer);
+    previewTimer = window.setTimeout(updateCurrentEmailPreview, SCAN_DEBOUNCE_MS);
   }
 
   if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === "PHISHGUARD_SCAN_EMAIL") {
-        lastFingerprint = "";
+        lastScannedFingerprint = "";
         analyzeCurrentEmail();
         sendResponse({ ok: true, result: latestResult });
+        return true;
+      }
+
+      if (message?.type === "PHISHGUARD_GET_PREVIEW") {
+        const result = getCurrentEmailPreview();
+        latestResult = result;
+        lastPreviewFingerprint = [
+          result.email?.senderEmail || result.email?.senderName || "",
+          result.email?.subject || "",
+        ].join("|");
+        sendResponse({ ok: true, result });
         return true;
       }
 
@@ -821,15 +888,16 @@
     });
   }
 
-  const observer = new MutationObserver(scheduleScan);
+  const observer = new MutationObserver(schedulePreview);
   observer.observe(document.body, { childList: true, subtree: true });
   window.addEventListener("hashchange", () => {
-    lastFingerprint = "";
-    scheduleScan();
+    lastPreviewFingerprint = "";
+    lastScannedFingerprint = "";
+    schedulePreview();
   });
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) scheduleScan();
+    if (!document.hidden) schedulePreview();
   });
 
-  scheduleScan();
+  schedulePreview();
 })();
