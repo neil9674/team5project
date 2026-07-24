@@ -179,7 +179,7 @@
   }
 
   function isHiddenElement(element) {
-    if (!element) return false;
+    if (!(element instanceof Element)) return false;
     const style = window.getComputedStyle(element);
     const rect = element.getBoundingClientRect();
     return (
@@ -212,7 +212,7 @@
     root.querySelectorAll("a[href]").forEach((anchor) => addUrl(anchor.href, getText(anchor), anchor));
 
     const textUrlMatches = emailText.match(/\b(?:https?:\/\/|www\.)[^\s<>"']+/gi) || [];
-    textUrlMatches.forEach(addUrl);
+    textUrlMatches.forEach((match) => addUrl(match));
 
     return Array.from(urls.values());
   }
