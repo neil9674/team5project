@@ -317,7 +317,7 @@
 
   function combineResults(email, modelResult, heuristicResult) {
     const mlScore = Math.round((modelResult.probability || 0) * 100);
-    const score = Math.min(100, Math.round(mlScore * 0.65 + heuristicResult.score * 0.35));
+    const score = Math.min(100, Math.round(mlScore * 0.50 + heuristicResult.score * 0.50));
     const status = modelResult.isPhishing || heuristicResult.score >= 40 || score >= 55 ? "phishing" : "safe";
 
     return {
